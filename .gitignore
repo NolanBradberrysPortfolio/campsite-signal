@@ -2,6 +2,7 @@ node_modules/
 .env
 .env.local
 data/*.json
+data/access-code.txt
 *.log
 screenshot-*.png
 npm-debug.log*

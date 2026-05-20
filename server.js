@@ -9,6 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 const dataDir = path.join(__dirname, "data");
 const storePath = path.join(dataDir, "store.json");
+const accessCodePath = path.join(dataDir, "access-code.txt");
 const port = Number(process.env.PORT || 4173);
 
 const defaultStore = {
@@ -74,6 +75,22 @@ async function readStore() {
 
 async function writeStore(store) {
   await writeJson(storePath, store);
+}
+
+async function getAccessCode() {
+  if (process.env.APP_ACCESS_CODE) return process.env.APP_ACCESS_CODE.trim();
+  try {
+    return (await readFile(accessCodePath, "utf8")).trim();
+  } catch {
+    return "";
+  }
+}
+
+async function isAuthorized(req) {
+  const code = await getAccessCode();
+  if (!code) return true;
+  const headerCode = String(req.headers["x-app-code"] || "").trim();
+  return crypto.timingSafeEqual(Buffer.from(headerCode), Buffer.from(code));
 }
 
 function jsonResponse(res, statusCode, data) {
@@ -664,11 +681,16 @@ function publicAlert(alert) {
 }
 
 async function handleApi(req, res, pathname) {
+  const accessCode = await getAccessCode();
+  const authorized = await isAuthorized(req).catch(() => false);
+
   if (req.method === "GET" && pathname === "/api/status") {
     const telegramSettings = await getTelegramSettingsAsync();
     const store = await readStore();
     return jsonResponse(res, 200, {
       ok: true,
+      authRequired: Boolean(accessCode),
+      authorized,
       providers: providerStatus(telegramSettings),
       counts: {
         alerts: store.alerts.length,
@@ -676,6 +698,13 @@ async function handleApi(req, res, pathname) {
         hits: store.hits.length,
         notifications: store.notifications.length
       }
+    });
+  }
+
+  if (accessCode && !authorized) {
+    return jsonResponse(res, 401, {
+      error: "Access code required.",
+      authRequired: true
     });
   }
 
