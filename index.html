@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Campsite Signal</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+    <script src="/app.js" type="module" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">CS</div>
+          <div>
+            <h1>Campsite Signal</h1>
+            <p>Availability alerts for manual booking</p>
+          </div>
+        </div>
+
+        <nav class="nav-list" aria-label="Primary">
+          <a href="#builder" class="nav-item active"><i data-lucide="wand-2"></i><span>Builder</span></a>
+          <a href="#alerts" class="nav-item"><i data-lucide="bell-ring"></i><span>Alerts</span></a>
+          <a href="#hits" class="nav-item"><i data-lucide="list-checks"></i><span>Matches</span></a>
+          <a href="#settings" class="nav-item"><i data-lucide="settings-2"></i><span>Channels</span></a>
+        </nav>
+
+        <div class="provider-panel">
+          <div class="panel-title">Channels</div>
+          <div id="providerStatus" class="status-stack"></div>
+        </div>
+      </aside>
+
+      <main>
+        <section id="builder" class="workspace-section builder-grid">
+          <div class="builder-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Natural language alert</p>
+                <h2>Describe the trip</h2>
+              </div>
+              <button id="fillExample" class="secondary-button small" type="button">
+                <i data-lucide="sparkles"></i>
+                Example
+              </button>
+            </div>
+
+            <label class="field">
+              <span>Request</span>
+              <textarea id="promptInput" rows="7">Find high elevation campsites near Eastern Sierra or Mammoth for July 4 weekend from Thursday night to Sunday, near alpine lakes, water, and trails. Send me Telegram alerts when anything opens.</textarea>
+            </label>
+
+            <div class="field-grid">
+              <label class="field">
+                <span>Arrival</span>
+                <input id="arrivalInput" type="date" value="2026-07-02">
+              </label>
+              <label class="field">
+                <span>Checkout</span>
+                <input id="checkoutInput" type="date" value="2026-07-05">
+              </label>
+              <label class="field">
+                <span>Search area</span>
+                <input id="locationInput" type="text" value="Eastern Sierra Mammoth">
+              </label>
+              <label class="field">
+                <span>Check interval</span>
+                <select id="intervalInput">
+                  <option value="30">30 minutes</option>
+                  <option value="15">15 minutes</option>
+                  <option value="60">1 hour</option>
+                  <option value="120">2 hours</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="toggle-row">
+              <label class="switch">
+                <input id="telegramInput" type="checkbox" checked>
+                <span></span>
+                Telegram
+              </label>
+              <label class="switch">
+                <input id="emailInput" type="checkbox">
+                <span></span>
+                Email
+              </label>
+              <label class="switch">
+                <input id="smsInput" type="checkbox">
+                <span></span>
+                SMS
+              </label>
+              <label class="switch">
+                <input id="groupSitesInput" type="checkbox">
+                <span></span>
+                Group sites
+              </label>
+            </div>
+
+            <div class="field-grid hidden-destinations">
+              <label class="field optional-destination" data-channel="email">
+                <span>Email destination</span>
+                <input id="emailDestinationInput" type="email" placeholder="name@example.com">
+              </label>
+              <label class="field optional-destination" data-channel="sms">
+                <span>SMS destination</span>
+                <input id="smsDestinationInput" type="tel" placeholder="+15555551212">
+              </label>
+            </div>
+
+            <div class="action-row">
+              <button id="discoverButton" class="primary-button" type="button">
+                <i data-lucide="search"></i>
+                Generate alert list
+              </button>
+              <button id="parseButton" class="secondary-button" type="button">
+                <i data-lucide="scan-text"></i>
+                Parse only
+              </button>
+            </div>
+          </div>
+
+          <div class="summary-panel">
+            <div class="metric-row">
+              <div class="metric">
+                <span id="activeAlertsMetric">0</span>
+                <p>Active alerts</p>
+              </div>
+              <div class="metric">
+                <span id="matchesMetric">0</span>
+                <p>Matches found</p>
+              </div>
+            </div>
+            <div id="parsedSummary" class="parsed-summary">
+              <div class="empty-state compact">
+                <i data-lucide="map"></i>
+                <p>Parsed constraints and ranked targets will appear here.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="workspace-section targets-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Review before monitoring</p>
+              <h2>Generated targets</h2>
+            </div>
+            <div class="target-actions">
+              <button id="selectAllTargets" class="secondary-button small" type="button">Select all</button>
+              <button id="createAlertButton" class="primary-button small" type="button" disabled>
+                <i data-lucide="bell-plus"></i>
+                Create alert
+              </button>
+            </div>
+          </div>
+          <div id="targetsGrid" class="targets-grid">
+            <div class="empty-state">
+              <i data-lucide="trees"></i>
+              <p>No target list yet.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="alerts" class="workspace-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Running monitors</p>
+              <h2>Alerts</h2>
+            </div>
+            <button id="refreshButton" class="secondary-button small" type="button">
+              <i data-lucide="refresh-cw"></i>
+              Refresh
+            </button>
+          </div>
+          <div id="alertsList" class="alerts-list"></div>
+        </section>
+
+        <section id="hits" class="workspace-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Availability feed</p>
+              <h2>Matches</h2>
+            </div>
+          </div>
+          <div id="hitsList" class="hits-list"></div>
+        </section>
+
+        <section id="settings" class="workspace-section settings-grid">
+          <div>
+            <p class="eyebrow">Notifications</p>
+            <h2>Channel test</h2>
+          </div>
+          <button id="testTelegramButton" class="secondary-button" type="button">
+            <i data-lucide="send"></i>
+            Send Telegram test
+          </button>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
