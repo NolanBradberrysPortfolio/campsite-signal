@@ -10,6 +10,20 @@ npm start
 
 Open `http://localhost:4173`.
 
+## Share or Deploy
+
+Public repository:
+
+https://github.com/NolanBradberrysPortfolio/campsite-signal
+
+For a hosted version, connect this repository to Render as a web service. The included `render.yaml` uses:
+
+- build command: `npm install`
+- start command: `npm start`
+- runtime: Node
+
+Add notification secrets in the hosting provider environment settings before enabling public alerts.
+
 ## What It Does
 
 - Parses natural-language campsite alert requests into dates, location, features, and channels.
