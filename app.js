@@ -22,12 +22,23 @@ function toast(message) {
 }
 
 async function api(path, options = {}) {
+  const headers = { "Content-Type": "application/json" };
+  const accessCode = localStorage.getItem("campsiteSignalAccessCode");
+  if (accessCode) headers["X-App-Code"] = accessCode;
+
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   const data = await response.json();
+  if (response.status === 401 && data.authRequired) {
+    const code = window.prompt("Enter the Campsite Signal access code:");
+    if (code) {
+      localStorage.setItem("campsiteSignalAccessCode", code.trim());
+      return api(path, options);
+    }
+  }
   if (!response.ok) {
     throw new Error(data.error || `Request failed with ${response.status}`);
   }
