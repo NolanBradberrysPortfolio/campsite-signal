@@ -83,20 +83,31 @@ async function writeStore(store) {
   await writeJson(storePath, store);
 }
 
-async function getAccessCode() {
-  if (process.env.APP_ACCESS_CODE) return process.env.APP_ACCESS_CODE.trim();
+function parseAccessCodes(value) {
+  return [...new Set(String(value || "")
+    .split(/[,\r\n]+/)
+    .map((code) => code.trim())
+    .filter(Boolean))];
+}
+
+async function getAccessCodes() {
+  if (process.env.APP_ACCESS_CODES) return parseAccessCodes(process.env.APP_ACCESS_CODES);
+  if (process.env.APP_ACCESS_CODE) return parseAccessCodes(process.env.APP_ACCESS_CODE);
   try {
-    return (await readFile(accessCodePath, "utf8")).trim();
+    return parseAccessCodes(await readFile(accessCodePath, "utf8"));
   } catch {
-    return "";
+    return [];
   }
 }
 
 async function isAuthorized(req) {
-  const code = await getAccessCode();
-  if (!code) return true;
+  const codes = await getAccessCodes();
+  if (!codes.length) return true;
   const headerCode = String(req.headers["x-app-code"] || "").trim();
-  return crypto.timingSafeEqual(Buffer.from(headerCode), Buffer.from(code));
+  return codes.some((code) => (
+    headerCode.length === code.length
+    && crypto.timingSafeEqual(Buffer.from(headerCode), Buffer.from(code))
+  ));
 }
 
 function jsonResponse(res, statusCode, data) {
@@ -696,7 +707,7 @@ function publicAlert(alert) {
 }
 
 async function handleApi(req, res, pathname) {
-  const accessCode = await getAccessCode();
+  const accessCodes = await getAccessCodes();
   const authorized = await isAuthorized(req).catch(() => false);
 
   if (req.method === "GET" && pathname === "/api/status") {
@@ -704,7 +715,7 @@ async function handleApi(req, res, pathname) {
     const store = await readStore();
     return jsonResponse(res, 200, {
       ok: true,
-      authRequired: Boolean(accessCode),
+      authRequired: Boolean(accessCodes.length),
       authorized,
       providers: providerStatus(telegramSettings),
       counts: {
@@ -716,7 +727,7 @@ async function handleApi(req, res, pathname) {
     });
   }
 
-  if (accessCode && !authorized) {
+  if (accessCodes.length && !authorized) {
     return jsonResponse(res, 401, {
       error: "Access code required.",
       authRequired: true
