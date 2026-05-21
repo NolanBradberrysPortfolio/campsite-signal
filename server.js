@@ -11,6 +11,12 @@ const dataDir = path.join(__dirname, "data");
 const storePath = path.join(dataDir, "store.json");
 const accessCodePath = path.join(dataDir, "access-code.txt");
 const port = Number(process.env.PORT || 4173);
+const allowedOrigins = new Set(
+  (process.env.ALLOWED_ORIGINS || "https://nolanbradberrysportfolio.github.io")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
 
 const defaultStore = {
   alerts: [],
@@ -105,6 +111,15 @@ function jsonResponse(res, statusCode, data) {
 function textResponse(res, statusCode, text) {
   res.writeHead(statusCode, { "Content-Type": "text/plain; charset=utf-8" });
   res.end(text);
+}
+
+function applyCors(req, res) {
+  const origin = req.headers.origin;
+  if (!origin || (!allowedOrigins.has("*") && !allowedOrigins.has(origin))) return;
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-App-Code");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Vary", "Origin");
 }
 
 async function readBody(req) {
@@ -855,6 +870,13 @@ async function serveStatic(req, res, pathname) {
 }
 
 const server = http.createServer(async (req, res) => {
+  applyCors(req, res);
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   try {
     if (url.pathname.startsWith("/api/")) {
