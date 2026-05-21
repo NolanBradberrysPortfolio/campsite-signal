@@ -8,6 +8,12 @@ const state = {
 };
 
 const $ = (selector) => document.querySelector(selector);
+const API_BASE = String(window.CAMPSITE_SIGNAL_API_BASE || "").replace(/\/$/, "");
+
+function apiUrl(path) {
+  if (!API_BASE) return path;
+  return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 function iconRefresh() {
   if (window.lucide) window.lucide.createIcons();
@@ -26,7 +32,7 @@ async function api(path, options = {}) {
   const accessCode = localStorage.getItem("campsiteSignalAccessCode");
   if (accessCode) headers["X-App-Code"] = accessCode;
 
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     headers,
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined
