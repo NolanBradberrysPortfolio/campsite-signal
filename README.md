@@ -14,7 +14,7 @@ Open `http://localhost:4173`.
 
 Public repository:
 
-https://github.com/NolanBradberrysPortfolio/campsite-signal
+https://github.com/NolanBradberrysPortfolio/easycamp
 
 For a hosted version, connect this repository to Render as a web service. The included `render.yaml` uses:
 

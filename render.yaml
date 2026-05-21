@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: campsite-signal
+    name: easycamp
     env: node
     plan: free
     buildCommand: "npm install"
