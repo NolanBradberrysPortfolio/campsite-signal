@@ -12,6 +12,16 @@ const storePath = path.join(dataDir, "store.json");
 const accessCodePath = path.join(dataDir, "access-code.txt");
 const port = Number(process.env.PORT || 4173);
 const defaultCheckIntervalMinutes = 1;
+const publicBaseUrl = String(
+  process.env.PUBLIC_BASE_URL
+  || process.env.EASYCAMP_PUBLIC_BASE_URL
+  || "https://greeting-stomach-prozac-binding.trycloudflare.com"
+).replace(/\/$/, "");
+const appBaseUrl = String(
+  process.env.APP_BASE_URL
+  || process.env.EASYCAMP_APP_BASE_URL
+  || "https://nolanbradberrysportfolio.github.io/easycamp/"
+).replace(/\/$/, "");
 const allowedOrigins = new Set(
   (process.env.ALLOWED_ORIGINS || "https://nolanbradberrysportfolio.github.io")
     .split(",")
@@ -123,6 +133,14 @@ function jsonResponse(res, statusCode, data) {
 function textResponse(res, statusCode, text) {
   res.writeHead(statusCode, { "Content-Type": "text/plain; charset=utf-8" });
   res.end(text);
+}
+
+function htmlResponse(res, statusCode, html) {
+  res.writeHead(statusCode, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store"
+  });
+  res.end(html);
 }
 
 function applyCors(req, res) {
@@ -243,6 +261,19 @@ function parseIncludeGroupSites(prompt, explicitValue) {
 function normalizeCheckInterval(value) {
   const minutes = Number(value || defaultCheckIntervalMinutes);
   return Math.max(1, Math.min(60, Number.isFinite(minutes) ? minutes : defaultCheckIntervalMinutes));
+}
+
+function createUnsubscribeToken() {
+  return crypto.randomBytes(24).toString("base64url");
+}
+
+function ensureAlertUnsubscribeToken(alert) {
+  if (!alert.unsubscribeToken) alert.unsubscribeToken = createUnsubscribeToken();
+  return alert.unsubscribeToken;
+}
+
+function unsubscribeUrlFor(alert) {
+  return `${publicBaseUrl}/unsubscribe/${ensureAlertUnsubscribeToken(alert)}`;
 }
 
 function parseConstraints(input = {}) {
@@ -516,7 +547,25 @@ function providerStatus(settings = null) {
   };
 }
 
-function formatHitMessage(alert, hits) {
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  })[char]);
+}
+
+function truncateWithFooter(body, footer, maxLength) {
+  if (`${body}${footer}`.length <= maxLength) return `${body}${footer}`;
+  const suffix = `\n...\n${footer.trimStart()}`;
+  const available = Math.max(0, maxLength - suffix.length);
+  return `${body.slice(0, available).trimEnd()}${suffix}`;
+}
+
+function formatHitMessage(alert, hits, options = {}) {
+  const maxLength = options.maxLength || 3800;
   const lines = [
     "EasyCamp availability alert",
     `${alert.constraints.arrivalDate} to ${alert.constraints.checkoutDate}`,
@@ -531,8 +580,31 @@ function formatHitMessage(alert, hits) {
   }
   if (hits.length > 8) lines.push(`Plus ${hits.length - 8} more matching sites.`);
   lines.push("Manual booking only. Availability can disappear before checkout.");
-  const message = lines.join("\n");
-  return message.length > 3800 ? `${message.slice(0, 3800)}\n...` : message;
+  const footer = `\n\nUnsubscribe from this search: ${unsubscribeUrlFor(alert)}`;
+  return truncateWithFooter(lines.join("\n"), footer, maxLength);
+}
+
+function formatHitEmailHtml(alert, hits) {
+  const rows = hits.slice(0, 8).map((hit) => `
+    <p>
+      <strong>${escapeHtml(hit.campground)} - site ${escapeHtml(hit.site)}</strong><br>
+      ${escapeHtml(hit.type || "Campsite")} | ${escapeHtml(hit.region || "Region unavailable")}<br>
+      <a href="${escapeHtml(hit.link)}">Open on Recreation.gov</a><br>
+      ${hit.why ? escapeHtml(hit.why) : ""}
+    </p>
+  `).join("");
+  return `
+    <div style="font-family:Arial,sans-serif;line-height:1.45;color:#16201b">
+      <h2>EasyCamp availability alert</h2>
+      <p>${escapeHtml(alert.constraints.arrivalDate)} to ${escapeHtml(alert.constraints.checkoutDate)}</p>
+      ${rows}
+      ${hits.length > 8 ? `<p>Plus ${hits.length - 8} more matching sites.</p>` : ""}
+      <p>Manual booking only. Availability can disappear before checkout.</p>
+      <p style="font-size:11px;color:#687067;margin-top:24px">
+        <a href="${escapeHtml(unsubscribeUrlFor(alert))}" style="color:#687067">Unsubscribe from this search</a>
+      </p>
+    </div>
+  `;
 }
 
 async function sendTelegram(text) {
@@ -551,7 +623,7 @@ async function sendTelegram(text) {
   return { provider: "telegram", source: settings.source };
 }
 
-async function sendEmail(destination, subject, text) {
+async function sendEmail(destination, subject, text, html = null) {
   if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
     throw new Error("Email is not configured. Set RESEND_API_KEY and EMAIL_FROM.");
   }
@@ -565,7 +637,8 @@ async function sendEmail(destination, subject, text) {
       from: process.env.EMAIL_FROM,
       to: [destination],
       subject,
-      text
+      text,
+      ...(html ? { html } : {})
     })
   });
   if (!response.ok) throw new Error(`Email send failed with ${response.status}`);
@@ -595,7 +668,10 @@ async function sendSms(destination, text) {
 
 async function sendAlertNotifications(store, alert, newHits) {
   const channels = alert.channels || {};
+  ensureAlertUnsubscribeToken(alert);
   const message = formatHitMessage(alert, newHits);
+  const smsMessage = formatHitMessage(alert, newHits, { maxLength: 1300 });
+  const emailHtml = formatHitEmailHtml(alert, newHits);
   const sent = [];
   const skipped = [];
 
@@ -609,7 +685,7 @@ async function sendAlertNotifications(store, alert, newHits) {
 
   if (channels.email?.enabled && channels.email.destination) {
     try {
-      sent.push(await sendEmail(channels.email.destination, "EasyCamp site available", message));
+      sent.push(await sendEmail(channels.email.destination, "EasyCamp site available", message, emailHtml));
     } catch (error) {
       skipped.push({ provider: "email", error: error.message });
     }
@@ -617,7 +693,7 @@ async function sendAlertNotifications(store, alert, newHits) {
 
   if (channels.sms?.enabled && channels.sms.destination) {
     try {
-      sent.push(await sendSms(channels.sms.destination, message));
+      sent.push(await sendSms(channels.sms.destination, smsMessage));
     } catch (error) {
       skipped.push({ provider: "sms", error: error.message });
     }
@@ -703,8 +779,9 @@ async function schedulerTick() {
 }
 
 function publicAlert(alert) {
+  const { unsubscribeToken, ...safeAlert } = alert;
   return {
-    ...alert,
+    ...safeAlert,
     channels: {
       telegram: { enabled: Boolean(alert.channels?.telegram?.enabled) },
       email: {
@@ -717,6 +794,62 @@ function publicAlert(alert) {
       }
     }
   };
+}
+
+async function handleUnsubscribe(req, res, token) {
+  if (!["GET", "POST"].includes(req.method)) {
+    res.writeHead(405, { Allow: "GET, POST" });
+    res.end();
+    return;
+  }
+
+  const cleanToken = String(token || "").trim();
+  if (!cleanToken) {
+    return htmlResponse(res, 404, unsubscribePage("Search not found", "That unsubscribe link is missing its token."));
+  }
+
+  const store = await readStore();
+  const alert = store.alerts.find((item) => item.unsubscribeToken === cleanToken);
+  if (!alert) {
+    return htmlResponse(res, 404, unsubscribePage("Search not found", "That unsubscribe link is no longer valid."));
+  }
+
+  alert.status = "paused";
+  alert.nextCheckAt = null;
+  alert.unsubscribedAt = new Date().toISOString();
+  alert.updatedAt = new Date().toISOString();
+  await writeStore(store);
+
+  return htmlResponse(
+    res,
+    200,
+    unsubscribePage("Search stopped", `${alert.name || "This EasyCamp search"} is no longer running.`)
+  );
+}
+
+function unsubscribePage(title, message) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml(title)} - EasyCamp</title>
+    <style>
+      body{margin:0;min-height:100vh;display:grid;place-items:center;padding:18px;background:#f4f1ea;color:#16201b;font-family:Inter,Arial,sans-serif}
+      main{width:min(100%,420px);padding:24px;border:1px solid #ded8ca;border-radius:8px;background:#fffdfa;box-shadow:0 18px 45px rgba(41,35,25,.11)}
+      .mark{display:grid;place-items:center;width:42px;height:42px;border-radius:8px;background:#1e6b4a;color:#fff;font-weight:800}
+      h1{margin:18px 0 8px;font-size:26px;line-height:1.1}p{margin:0;color:#687067;line-height:1.45}.link{display:inline-block;margin-top:18px;color:#286f8f;font-weight:800;text-decoration:none}
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark">EC</div>
+      <h1>${escapeHtml(title)}</h1>
+      <p>${escapeHtml(message)}</p>
+      <a class="link" href="${escapeHtml(appBaseUrl)}">Open EasyCamp</a>
+    </main>
+  </body>
+</html>`;
 }
 
 async function handleApi(req, res, pathname) {
@@ -795,6 +928,7 @@ async function handleApi(req, res, pathname) {
         }
       },
       intervalMinutes: normalizeCheckInterval(body.intervalMinutes),
+      unsubscribeToken: createUnsubscribeToken(),
       status: body.startPaused ? "paused" : "active",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -859,7 +993,7 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "POST" && pathname === "/api/notifications/test") {
     const body = await readBody(req);
-    const message = body.message || "Test: campsite alert notifications are connected. Manual booking only.";
+    const message = body.message || "Test: EasyCamp notifications are connected. Manual booking only.";
     const results = [];
     if (body.channels?.telegram?.enabled) results.push(await sendTelegram(message));
     if (body.channels?.email?.enabled && body.channels.email.destination) {
@@ -903,6 +1037,12 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   try {
+    const unsubscribeMatch = url.pathname.match(/^\/unsubscribe\/([^/]+)$/);
+    if (unsubscribeMatch) {
+      await handleUnsubscribe(req, res, decodeURIComponent(unsubscribeMatch[1]));
+      return;
+    }
+
     if (url.pathname.startsWith("/api/")) {
       await handleApi(req, res, url.pathname);
       return;

@@ -31,6 +31,7 @@ Add notification secrets in the hosting provider environment settings before ena
 - Lets a user review the generated campground list before monitoring.
 - Checks availability against Recreation.gov campground availability endpoints.
 - Sends direct booking links by Telegram, email, or SMS when configured.
+- Adds an unsubscribe link to each availability notification so the user can stop that search.
 - Stores alerts and hits in `data/store.json`.
 
 ## Boundaries
@@ -57,3 +58,8 @@ SMS uses Twilio:
 - `TWILIO_ACCOUNT_SID`
 - `TWILIO_AUTH_TOKEN`
 - `TWILIO_FROM_NUMBER`
+
+Unsubscribe links use:
+
+- `PUBLIC_BASE_URL`: public backend URL, for example a Render URL or Cloudflare Tunnel URL.
+- `APP_BASE_URL`: public frontend URL shown after the search is stopped.
