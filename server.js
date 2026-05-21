@@ -11,6 +11,7 @@ const dataDir = path.join(__dirname, "data");
 const storePath = path.join(dataDir, "store.json");
 const accessCodePath = path.join(dataDir, "access-code.txt");
 const port = Number(process.env.PORT || 4173);
+const defaultCheckIntervalMinutes = 1;
 const allowedOrigins = new Set(
   (process.env.ALLOWED_ORIGINS || "https://nolanbradberrysportfolio.github.io")
     .split(",")
@@ -129,7 +130,7 @@ function applyCors(req, res) {
   if (!origin || (!allowedOrigins.has("*") && !allowedOrigins.has(origin))) return;
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-App-Code");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   res.setHeader("Vary", "Origin");
 }
 
@@ -233,14 +234,26 @@ function parseDriveHours(prompt) {
   return match ? Number(match[1]) : null;
 }
 
+function parseIncludeGroupSites(prompt, explicitValue) {
+  if (typeof explicitValue === "boolean") return explicitValue;
+  if (/\b(?:no|skip|exclude|avoid)\s+group\s+(?:sites?|camps?|campgrounds?)\b/i.test(prompt)) return false;
+  return /\b(?:include|allow|want|need|find|show)\s+group\s+(?:sites?|camps?|campgrounds?)\b/i.test(prompt);
+}
+
+function normalizeCheckInterval(value) {
+  const minutes = Number(value || defaultCheckIntervalMinutes);
+  return Math.max(1, Math.min(60, Number.isFinite(minutes) ? minutes : defaultCheckIntervalMinutes));
+}
+
 function parseConstraints(input = {}) {
   const prompt = String(input.prompt || "");
   const explicit = input.constraints || {};
-  let dates = null;
+  let dates = parseIsoDates(prompt);
   if (/july\s*4|4th of july|independence day/i.test(prompt)) {
-    dates = julyFourthWeekend(currentTripYear(), prompt);
+    dates ||= julyFourthWeekend(currentTripYear(), prompt);
+  } else {
+    dates ||= parseMonthDay(prompt);
   }
-  dates = parseIsoDates(prompt) || parseMonthDay(prompt) || dates;
 
   const features = keywordList(prompt, [
     "high elevation", "alpine", "lake", "lakes", "water", "waterfall", "river",
@@ -260,7 +273,7 @@ function parseConstraints(input = {}) {
     maxDriveHours: explicit.maxDriveHours ?? parseDriveHours(prompt),
     mustHave: [...new Set([...(explicit.mustHave || []), ...features])],
     equipment: explicit.equipment?.length ? explicit.equipment : (equipment.length ? equipment : ["tent"]),
-    includeGroupSites: Boolean(explicit.includeGroupSites || /group site|group camp/i.test(prompt)),
+    includeGroupSites: parseIncludeGroupSites(prompt, explicit.includeGroupSites),
     channels: [...new Set([...(explicit.channels || []), ...(channels.length ? channels : ["telegram"])])],
     searchQuery: explicit.searchQuery || input.searchQuery || parseLocation(prompt, explicit.location || input.location),
     rawPrompt: prompt
@@ -324,7 +337,7 @@ async function recgovSearch(query, size = 40) {
     size: String(size)
   });
   const response = await fetch(`https://www.recreation.gov/api/search?${params}`, {
-    headers: { "User-Agent": "Campsite alert app; manual booking only" }
+    headers: { "User-Agent": "EasyCamp; manual booking only" }
   });
   if (!response.ok) throw new Error(`Recreation.gov search failed with ${response.status}`);
   const data = await response.json();
@@ -399,7 +412,7 @@ async function fetchAvailabilityMonth(facilityId, monthStart, attempt = 1) {
   const start = encodeURIComponent(monthStart);
   const url = `https://www.recreation.gov/api/camps/availability/campground/${facilityId}/month?start_date=${start}`;
   const response = await fetch(url, {
-    headers: { "User-Agent": "Campsite alert app; manual booking only" }
+    headers: { "User-Agent": "EasyCamp; manual booking only" }
   });
   if (response.status === 429 && attempt < 3) {
     await new Promise((resolve) => setTimeout(resolve, 10_000 * attempt));
@@ -505,7 +518,7 @@ function providerStatus(settings = null) {
 
 function formatHitMessage(alert, hits) {
   const lines = [
-    "Campsite availability alert",
+    "EasyCamp availability alert",
     `${alert.constraints.arrivalDate} to ${alert.constraints.checkoutDate}`,
     ""
   ];
@@ -596,7 +609,7 @@ async function sendAlertNotifications(store, alert, newHits) {
 
   if (channels.email?.enabled && channels.email.destination) {
     try {
-      sent.push(await sendEmail(channels.email.destination, "Campsite available", message));
+      sent.push(await sendEmail(channels.email.destination, "EasyCamp site available", message));
     } catch (error) {
       skipped.push({ provider: "email", error: error.message });
     }
@@ -646,7 +659,7 @@ async function runAlertCheck(alertId, options = {}) {
   alert.lastCheckedAt = new Date().toISOString();
   alert.lastMatchCount = matches.length;
   alert.lastWarningCount = warnings.length;
-  alert.nextCheckAt = new Date(Date.now() + (alert.intervalMinutes || 30) * 60_000).toISOString();
+  alert.nextCheckAt = new Date(Date.now() + normalizeCheckInterval(alert.intervalMinutes) * 60_000).toISOString();
   alert.updatedAt = new Date().toISOString();
 
   let notificationResult = { sent: [], skipped: [] };
@@ -781,7 +794,7 @@ async function handleApi(req, res, pathname) {
           destination: String(body.channels?.sms?.destination || "").trim()
         }
       },
-      intervalMinutes: Math.max(10, Math.min(240, Number(body.intervalMinutes || 30))),
+      intervalMinutes: normalizeCheckInterval(body.intervalMinutes),
       status: body.startPaused ? "paused" : "active",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -830,7 +843,7 @@ async function handleApi(req, res, pathname) {
       if (!alert) return jsonResponse(res, 404, { error: "Alert not found." });
       if (body.status && ["active", "paused"].includes(body.status)) alert.status = body.status;
       if (body.name) alert.name = body.name;
-      if (body.intervalMinutes) alert.intervalMinutes = Math.max(10, Math.min(240, Number(body.intervalMinutes)));
+      if (body.intervalMinutes) alert.intervalMinutes = normalizeCheckInterval(body.intervalMinutes);
       alert.updatedAt = new Date().toISOString();
       await writeStore(store);
       return jsonResponse(res, 200, { alert: publicAlert(alert) });
@@ -850,7 +863,7 @@ async function handleApi(req, res, pathname) {
     const results = [];
     if (body.channels?.telegram?.enabled) results.push(await sendTelegram(message));
     if (body.channels?.email?.enabled && body.channels.email.destination) {
-      results.push(await sendEmail(body.channels.email.destination, "Campsite alert test", message));
+      results.push(await sendEmail(body.channels.email.destination, "EasyCamp alert test", message));
     }
     if (body.channels?.sms?.enabled && body.channels.sms.destination) {
       results.push(await sendSms(body.channels.sms.destination, message));
@@ -903,6 +916,6 @@ const server = http.createServer(async (req, res) => {
 
 await ensureStore();
 server.listen(port, () => {
-  console.log(`Campsite alert app running at http://localhost:${port}`);
+  console.log(`EasyCamp running at http://localhost:${port}`);
 });
-setInterval(schedulerTick, 60_000).unref();
+setInterval(schedulerTick, 15_000).unref();

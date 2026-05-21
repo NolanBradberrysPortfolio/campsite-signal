@@ -1,4 +1,4 @@
-# Campsite Signal
+# EasyCamp
 
 Local web app for natural-language campsite availability alerts.
 

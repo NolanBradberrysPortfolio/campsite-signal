@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Campsite Signal</title>
+    <title>EasyCamp</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
     <script src="config.js" defer></script>
@@ -13,10 +13,10 @@
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <div class="brand-mark">CS</div>
+          <div class="brand-mark">EC</div>
           <div>
-            <h1>Campsite Signal</h1>
-            <p>Availability alerts for manual booking</p>
+            <h1>EasyCamp</h1>
+            <p>Camp alerts for manual booking</p>
           </div>
         </div>
 
@@ -48,33 +48,10 @@
             </div>
 
             <label class="field">
-              <span>Request</span>
+              <span>Trip request</span>
               <textarea id="promptInput" rows="7">Find high elevation campsites near Eastern Sierra or Mammoth for July 4 weekend from Thursday night to Sunday, near alpine lakes, water, and trails. Send me Telegram alerts when anything opens.</textarea>
+              <p class="field-help">Include where, dates or nights, campsite preferences, and notification channel in plain English.</p>
             </label>
-
-            <div class="field-grid">
-              <label class="field">
-                <span>Arrival</span>
-                <input id="arrivalInput" type="date" value="2026-07-02">
-              </label>
-              <label class="field">
-                <span>Checkout</span>
-                <input id="checkoutInput" type="date" value="2026-07-05">
-              </label>
-              <label class="field">
-                <span>Search area</span>
-                <input id="locationInput" type="text" value="Eastern Sierra Mammoth">
-              </label>
-              <label class="field">
-                <span>Check interval</span>
-                <select id="intervalInput">
-                  <option value="30">30 minutes</option>
-                  <option value="15">15 minutes</option>
-                  <option value="60">1 hour</option>
-                  <option value="120">2 hours</option>
-                </select>
-              </label>
-            </div>
 
             <div class="toggle-row">
               <label class="switch">
@@ -91,11 +68,6 @@
                 <input id="smsInput" type="checkbox">
                 <span></span>
                 SMS
-              </label>
-              <label class="switch">
-                <input id="groupSitesInput" type="checkbox">
-                <span></span>
-                Group sites
               </label>
             </div>
 
@@ -114,10 +86,6 @@
               <button id="discoverButton" class="primary-button" type="button">
                 <i data-lucide="search"></i>
                 Generate alert list
-              </button>
-              <button id="parseButton" class="secondary-button" type="button">
-                <i data-lucide="scan-text"></i>
-                Parse only
               </button>
             </div>
           </div>
@@ -199,6 +167,23 @@
           </button>
         </section>
       </main>
+    </div>
+
+    <div id="authGate" class="auth-gate" hidden>
+      <form id="authForm" class="auth-card">
+        <div class="brand-mark">EC</div>
+        <div>
+          <p class="eyebrow">Private beta</p>
+          <h2>Open EasyCamp</h2>
+          <p class="auth-copy">Enter the access code once for this browser session.</p>
+        </div>
+        <label class="field">
+          <span>Access code</span>
+          <input id="accessCodeInput" type="password" inputmode="numeric" autocomplete="one-time-code">
+        </label>
+        <button id="authButton" class="primary-button" type="submit">Continue</button>
+        <p id="authError" class="auth-error" role="alert"></p>
+      </form>
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

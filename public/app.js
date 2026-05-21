@@ -8,7 +8,15 @@ const state = {
 };
 
 const $ = (selector) => document.querySelector(selector);
-const API_BASE = String(window.CAMPSITE_SIGNAL_API_BASE || "").replace(/\/$/, "");
+const API_BASE = String(window.EASY_CAMP_API_BASE || "").replace(/\/$/, "");
+const ACCESS_CODE_KEY = "easyCampAccessCode";
+let refreshTimer = null;
+
+try {
+  localStorage.removeItem("campsiteSignalAccessCode");
+} catch {
+  // Ignore storage access failures.
+}
 
 function apiUrl(path) {
   if (!API_BASE) return path;
@@ -29,7 +37,7 @@ function toast(message) {
 
 async function api(path, options = {}) {
   const headers = { "Content-Type": "application/json" };
-  const accessCode = localStorage.getItem("campsiteSignalAccessCode");
+  const accessCode = sessionStorage.getItem(ACCESS_CODE_KEY);
   if (accessCode) headers["X-App-Code"] = accessCode;
 
   const response = await fetch(apiUrl(path), {
@@ -39,11 +47,8 @@ async function api(path, options = {}) {
   });
   const data = await response.json();
   if (response.status === 401 && data.authRequired) {
-    const code = window.prompt("Enter the Campsite Signal access code:");
-    if (code) {
-      localStorage.setItem("campsiteSignalAccessCode", code.trim());
-      return api(path, options);
-    }
+    sessionStorage.removeItem(ACCESS_CODE_KEY);
+    showAuthGate("Enter the access code to continue.");
   }
   if (!response.ok) {
     throw new Error(data.error || `Request failed with ${response.status}`);
@@ -66,18 +71,16 @@ function channelInputs() {
 }
 
 function builderPayload() {
+  const channels = Object.entries(channelInputs())
+    .filter(([, value]) => value.enabled)
+    .map(([key]) => key);
+
   return {
     prompt: $("#promptInput").value.trim(),
     constraints: {
-      arrivalDate: $("#arrivalInput").value,
-      checkoutDate: $("#checkoutInput").value,
-      location: $("#locationInput").value.trim(),
-      includeGroupSites: $("#groupSitesInput").checked,
-      channels: Object.entries(channelInputs())
-        .filter(([, value]) => value.enabled)
-        .map(([key]) => key)
+      channels
     },
-    intervalMinutes: Number($("#intervalInput").value)
+    intervalMinutes: 1
   };
 }
 
@@ -101,7 +104,7 @@ function renderParsedSummary() {
     $("#parsedSummary").innerHTML = `
       <div class="empty-state compact">
         <i data-lucide="map"></i>
-        <p>Parsed constraints and ranked targets will appear here.</p>
+        <p>Parsed trip details and ranked targets will appear here.</p>
       </div>`;
     iconRefresh();
     return;
@@ -117,7 +120,7 @@ function renderParsedSummary() {
     <div class="summary-chip-list">
       ${chips.map((chip) => `<span class="chip">${escapeHtml(chip)}</span>`).join("")}
     </div>
-    <p>${state.targets.length} candidate campgrounds generated from official Recreation.gov search data.</p>
+      <p>${state.targets.length} candidate campgrounds generated from Recreation.gov search data.</p>
   `;
 }
 
@@ -180,7 +183,7 @@ function renderAlerts() {
       </div>
       <div class="meta-row">
         <span class="meta">${alert.targets.length} targets</span>
-        <span class="meta">${alert.intervalMinutes} min</span>
+        <span class="meta">fast checks</span>
         <span class="meta">${alert.lastCheckedAt ? `checked ${timeAgo(alert.lastCheckedAt)}` : "not checked yet"}</span>
         <span class="meta">${alert.lastMatchCount || 0} latest matches</span>
       </div>
@@ -249,6 +252,49 @@ async function loadStatus() {
   renderAll();
 }
 
+function showAuthGate(message = "") {
+  const gate = $("#authGate");
+  gate.hidden = false;
+  document.body.classList.add("auth-locked");
+  $("#authError").textContent = message;
+  window.setTimeout(() => $("#accessCodeInput")?.focus(), 0);
+}
+
+function hideAuthGate() {
+  $("#authGate").hidden = true;
+  document.body.classList.remove("auth-locked");
+  $("#authError").textContent = "";
+}
+
+function startRefreshTimer() {
+  if (refreshTimer) return;
+  refreshTimer = window.setInterval(() => loadStatus().catch(() => {}), 60_000);
+}
+
+async function unlockWithCode(code) {
+  sessionStorage.setItem(ACCESS_CODE_KEY, code.trim());
+  const status = await api("/api/status");
+  if (status.authRequired && !status.authorized) {
+    sessionStorage.removeItem(ACCESS_CODE_KEY);
+    throw new Error("That access code did not work.");
+  }
+  hideAuthGate();
+  await loadStatus();
+  startRefreshTimer();
+}
+
+async function initialize() {
+  updateDestinations();
+  const status = await api("/api/status");
+  if (status.authRequired && !status.authorized) {
+    sessionStorage.removeItem(ACCESS_CODE_KEY);
+    showAuthGate();
+    return;
+  }
+  await loadStatus();
+  startRefreshTimer();
+}
+
 async function parseOnly() {
   const data = await api("/api/parse", { method: "POST", body: builderPayload() });
   state.constraints = data.constraints;
@@ -265,9 +311,6 @@ async function discover() {
     const data = await api("/api/discover", { method: "POST", body: { ...builderPayload(), limit: 24 } });
     state.constraints = data.constraints;
     state.targets = data.targets;
-    $("#arrivalInput").value = data.constraints.arrivalDate || $("#arrivalInput").value;
-    $("#checkoutInput").value = data.constraints.checkoutDate || $("#checkoutInput").value;
-    $("#locationInput").value = data.constraints.location || $("#locationInput").value;
     renderParsedSummary();
     renderTargets();
     toast(`Generated ${data.targets.length} targets.`);
@@ -291,7 +334,7 @@ async function createAlert() {
     ...builderPayload(),
     targets: selected,
     channels: channelInputs(),
-    name: `${$("#locationInput").value.trim()} ${$("#arrivalInput").value}`
+    name: [state.constraints?.location, state.constraints?.arrivalDate].filter(Boolean).join(" ") || "EasyCamp alert"
   };
   const data = await api("/api/alerts", { method: "POST", body: payload });
   state.alerts.unshift(data.alert);
@@ -330,7 +373,7 @@ async function testTelegram() {
     method: "POST",
     body: {
       channels: { telegram: { enabled: true } },
-      message: "Test: Campsite Signal Telegram alerts are connected. Manual booking only."
+      message: "Test: EasyCamp Telegram alerts are connected. Manual booking only."
     }
   });
   toast("Telegram test sent.");
@@ -346,9 +389,6 @@ function updateDestinations() {
 
 function fillExample() {
   $("#promptInput").value = "Find high elevation campsites near Lake Tahoe and Desolation Wilderness for August 14-16, near lakes, granite, trailheads, and cooler weather. Send Telegram alerts and skip group sites.";
-  $("#arrivalInput").value = "2026-08-14";
-  $("#checkoutInput").value = "2026-08-16";
-  $("#locationInput").value = "Lake Tahoe Desolation Wilderness";
   $("#telegramInput").checked = true;
   $("#emailInput").checked = false;
   $("#smsInput").checked = false;
@@ -401,11 +441,25 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+$("#authForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = $("#authButton");
+  button.disabled = true;
+  $("#authError").textContent = "";
+  try {
+    await unlockWithCode($("#accessCodeInput").value);
+    $("#accessCodeInput").value = "";
+  } catch (error) {
+    $("#authError").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
 ["emailInput", "smsInput"].forEach((id) => {
   document.addEventListener("change", (event) => {
     if (event.target.id === id) updateDestinations();
   });
 });
 
-loadStatus().catch((error) => toast(error.message));
-window.setInterval(() => loadStatus().catch(() => {}), 60_000);
+initialize().catch((error) => toast(error.message));
