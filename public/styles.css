@@ -442,6 +442,19 @@ select:focus {
   background: #f2eee4;
 }
 
+.link-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--water);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
 .small {
   min-height: 36px;
 }
@@ -500,6 +513,170 @@ button svg {
   background: #ece7dd;
   color: var(--ink);
   font-size: 13px;
+  font-weight: 800;
+}
+
+.targeting-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.28fr);
+  gap: 16px;
+}
+
+.targeting-details {
+  min-width: 0;
+}
+
+.targeting-rows {
+  display: grid;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #fff;
+}
+
+.targeting-row {
+  display: grid;
+  grid-template-columns: 126px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.targeting-row:last-child {
+  border-bottom: 0;
+}
+
+.targeting-row span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.targeting-row strong {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.target-map {
+  min-height: 360px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #e8eee9;
+  overflow: hidden;
+}
+
+.target-map .empty-state {
+  height: 100%;
+  min-height: 360px;
+  border: 0;
+}
+
+.map-popup {
+  display: grid;
+  gap: 6px;
+  width: 210px;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.map-popup-image {
+  width: 100%;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.map-popup strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.map-popup span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.map-popup a {
+  color: var(--water);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.availability-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.availability-status svg {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  color: var(--water);
+}
+
+.availability-status.success svg {
+  color: var(--forest);
+}
+
+.availability-status.warning svg {
+  color: var(--danger);
+}
+
+.availability-status strong {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 15px;
+}
+
+.availability-status p,
+.availability-warning,
+.stale-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.stale-note {
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.availability-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.availability-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.availability-card h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.availability-card p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.availability-warning {
+  margin-top: 10px;
   font-weight: 800;
 }
 
@@ -716,7 +893,7 @@ button svg {
   }
 
   .nav-list {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .nav-item {
@@ -733,6 +910,11 @@ button svg {
 
   .targets-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .targeting-grid,
+  .availability-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -771,8 +953,19 @@ button svg {
 
   .field-grid,
   .targets-grid,
-  .metric-row {
+  .metric-row,
+  .availability-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .targeting-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .target-map,
+  .target-map .empty-state {
+    min-height: 300px;
   }
 
   .section-heading {

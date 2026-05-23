@@ -170,11 +170,28 @@ function normalizeDate(date) {
   return parsed.toISOString().slice(0, 10);
 }
 
+function isoDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
 function currentTripYear() {
   const now = new Date();
   const year = now.getFullYear();
   const julyFourth = new Date(`${year}-07-04T00:00:00`);
   return now > julyFourth ? year + 1 : year;
+}
+
+function yearForHoliday(anchorDateForYear) {
+  const now = new Date();
+  const thisYear = now.getFullYear();
+  const holidayThisYear = anchorDateForYear(thisYear);
+  return now > holidayThisYear ? thisYear + 1 : thisYear;
+}
+
+function firstWeekdayOfMonth(year, monthIndex, weekday) {
+  const date = new Date(year, monthIndex, 1);
+  date.setDate(1 + ((weekday - date.getDay() + 7) % 7));
+  return date;
 }
 
 function julyFourthWeekend(year = currentTripYear(), prompt = "") {
@@ -189,9 +206,42 @@ function julyFourthWeekend(year = currentTripYear(), prompt = "") {
   const wantsThursday = /\b(thursday|thu|thurs)\b/i.test(prompt);
   const arrival = wantsThursday ? thursday : friday;
   return {
-    arrivalDate: arrival.toISOString().slice(0, 10),
-    checkoutDate: sunday.toISOString().slice(0, 10)
+    arrivalDate: isoDate(arrival),
+    checkoutDate: isoDate(sunday),
+    dateLabel: "July 4 weekend"
   };
+}
+
+function laborDayDate(year) {
+  return firstWeekdayOfMonth(year, 8, 1);
+}
+
+function laborDayWeekend(year = yearForHoliday(laborDayDate), prompt = "") {
+  const laborDay = laborDayDate(year);
+  const thursday = new Date(laborDay);
+  thursday.setDate(laborDay.getDate() - 4);
+  const friday = new Date(laborDay);
+  friday.setDate(laborDay.getDate() - 3);
+  const sunday = new Date(laborDay);
+  sunday.setDate(laborDay.getDate() - 1);
+  const wantsThursday = /\b(thursday|thu|thurs)\b/i.test(prompt);
+  const wantsMondayCheckout = /\b(?:monday|mon)\b/i.test(prompt) || /\blabor day\s*(?:morning|checkout)\b/i.test(prompt);
+  const wantsSundayCheckout = /\b(?:to|through|until|-)\s*(?:sunday|sun)\b/i.test(prompt) && !wantsMondayCheckout;
+  return {
+    arrivalDate: isoDate(wantsThursday ? thursday : friday),
+    checkoutDate: isoDate(wantsSundayCheckout ? sunday : laborDay),
+    dateLabel: "Labor Day weekend"
+  };
+}
+
+function parseHolidayDates(prompt) {
+  if (/\b(?:labor day|labour day)\b/i.test(prompt)) {
+    return laborDayWeekend(yearForHoliday(laborDayDate), prompt);
+  }
+  if (/\b(?:july\s*4|4th of july|independence day)\b/i.test(prompt)) {
+    return julyFourthWeekend(currentTripYear(), prompt);
+  }
+  return null;
 }
 
 function parseMonthDay(prompt) {
@@ -315,11 +365,8 @@ function parseConstraints(input = {}) {
   const prompt = String(input.prompt || "");
   const explicit = input.constraints || {};
   let dates = parseIsoDates(prompt);
-  if (/july\s*4|4th of july|independence day/i.test(prompt)) {
-    dates ||= julyFourthWeekend(currentTripYear(), prompt);
-  } else {
-    dates ||= parseMonthDay(prompt);
-  }
+  dates ||= parseHolidayDates(prompt);
+  dates ||= parseMonthDay(prompt);
 
   const features = keywordList(prompt, [
     "high elevation", "alpine", "lake", "lakes", "water", "waterfall", "river",
@@ -342,6 +389,7 @@ function parseConstraints(input = {}) {
     includeGroupSites: parseIncludeGroupSites(prompt, explicit.includeGroupSites),
     channels: [...new Set([...(explicit.channels || []), ...(channels.length ? channels : ["telegram"])])],
     searchQuery: explicit.searchQuery || input.searchQuery || parseLocation(prompt, explicit.location || input.location),
+    dateLabel: explicit.dateLabel || input.dateLabel || dates?.dateLabel || "",
     rawPrompt: prompt
   };
 }
@@ -384,7 +432,43 @@ function resultLooksUnavailable(result) {
 function resultIsExcludedSiteClass(result, constraints) {
   if (constraints.includeGroupSites) return false;
   const text = `${result.name || ""} ${result.description || ""}`.toLowerCase();
-  return /\b(group camp|group campground|group site|horse camp|horse campsites|equestrian)\b/.test(text);
+  return /\b(group camp|group campground|group site|horse camp|horse campsites|equestrian|guard station cabin|lookout cabin)\b/.test(text);
+}
+
+function resultMatchesLocation(result, constraints) {
+  const location = String(constraints.location || "").toLowerCase();
+  const text = [
+    result.name,
+    result.parent_name,
+    result.city,
+    result.state_code,
+    result.description
+  ].filter(Boolean).join(" ").toLowerCase();
+  const latitude = Number(result.latitude);
+  const longitude = Number(result.longitude);
+
+  if (/high sierra|sierra nevada|eastern sierra/.test(location)) {
+    if (/\b(los padres|channel islands|santa rosa island)\b/i.test(text)) return false;
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      const insideSierraBox = latitude >= 35.2 && latitude <= 40.6 && longitude >= -121.6 && longitude <= -117.0;
+      if (!insideSierraBox) return false;
+    }
+  }
+
+  if (/eastern sierra/.test(location)) {
+    const easternSignals = /\b(inyo|mammoth|bishop|june lake|mono|lee vining|rock creek|crowley|eastern sierra)\b/i;
+    if (!easternSignals.test(text)) return false;
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      const insideEasternSierraBox = latitude >= 36.2 && latitude <= 38.9 && longitude >= -119.8 && longitude <= -117.4;
+      if (!insideEasternSierraBox) return false;
+    }
+  }
+
+  if (/yosemite/.test(location) && !/\byosemite\b/i.test(text)) return false;
+  if (/sequoia kings canyon/.test(location) && !/\b(sequoia|kings canyon)\b/i.test(text)) return false;
+  if (/lake tahoe/.test(location) && !/\b(tahoe|desolation|eldorado)\b/i.test(text)) return false;
+
+  return true;
 }
 
 function buildWhy(result, reasons) {
@@ -416,6 +500,7 @@ async function discoverTargets(input) {
     const fallback = julyFourthWeekend(currentTripYear(), constraints.rawPrompt || "");
     constraints.arrivalDate ||= fallback.arrivalDate;
     constraints.checkoutDate ||= fallback.checkoutDate;
+    constraints.dateLabel ||= `${fallback.dateLabel} default`;
   }
 
   const seedQueries = [
@@ -434,6 +519,7 @@ async function discoverTargets(input) {
       if (result.reservable === false) continue;
       if (resultLooksUnavailable(result)) continue;
       if (resultIsExcludedSiteClass(result, constraints)) continue;
+      if (!resultMatchesLocation(result, constraints)) continue;
       seen.add(id);
       const scoring = targetScore(result, constraints);
       if (scoring.score < 4) continue;
@@ -441,6 +527,7 @@ async function discoverTargets(input) {
         id,
         name: result.name,
         region: [result.parent_name, result.city, result.state_code].filter(Boolean).join(" / "),
+        state: result.state_code || result.addresses?.find((address) => address.state_code)?.state_code || "",
         priority: scoring.score >= 13 ? 1 : scoring.score >= 9 ? 2 : 3,
         score: scoring.score,
         why: buildWhy(result, scoring.reasons),
@@ -924,6 +1011,28 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const result = await discoverTargets(body);
     return jsonResponse(res, 200, result);
+  }
+
+  if (req.method === "POST" && pathname === "/api/availability/preview") {
+    const body = await readBody(req);
+    const constraints = parseConstraints(body);
+    if (!constraints.arrivalDate || !constraints.checkoutDate) {
+      const fallback = julyFourthWeekend(currentTripYear(), constraints.rawPrompt || "");
+      constraints.arrivalDate ||= fallback.arrivalDate;
+      constraints.checkoutDate ||= fallback.checkoutDate;
+      constraints.dateLabel ||= `${fallback.dateLabel} default`;
+    }
+    if (!Array.isArray(body.targets) || body.targets.length === 0) {
+      return jsonResponse(res, 400, { error: "At least one target campground is required." });
+    }
+    const { matches, warnings } = await checkTargets(body.targets.slice(0, 40), constraints);
+    return jsonResponse(res, 200, {
+      constraints,
+      matches: matches.slice(0, 100),
+      totalMatches: matches.length,
+      warnings,
+      checkedAt: new Date().toISOString()
+    });
   }
 
   if (req.method === "GET" && pathname === "/api/alerts") {

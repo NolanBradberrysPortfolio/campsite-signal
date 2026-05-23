@@ -4,8 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>EasyCamp</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="styles.css">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
     <script src="config.js" defer></script>
     <script src="app.js" type="module" defer></script>
   </head>
@@ -22,6 +24,7 @@
 
         <nav class="nav-list" aria-label="Primary">
           <a href="#builder" class="nav-item active"><i data-lucide="wand-2"></i><span>Builder</span></a>
+          <a href="#targeting" class="nav-item"><i data-lucide="map-pin"></i><span>Targeting</span></a>
           <a href="#alerts" class="nav-item"><i data-lucide="bell-ring"></i><span>Alerts</span></a>
           <a href="#hits" class="nav-item"><i data-lucide="list-checks"></i><span>Matches</span></a>
           <a href="#settings" class="nav-item"><i data-lucide="settings-2"></i><span>Channels</span></a>
@@ -106,6 +109,44 @@
                 <i data-lucide="map"></i>
                 <p>Parsed constraints and ranked targets will appear here.</p>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="targeting" class="workspace-section targeting-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Resolved targeting</p>
+              <h2>Dates, states, and map</h2>
+            </div>
+          </div>
+          <div class="targeting-grid">
+            <div id="targetingDetails" class="targeting-details">
+              <div class="empty-state compact">
+                <i data-lucide="map-pin"></i>
+                <p>Target area, states, and dates will appear after generation.</p>
+              </div>
+            </div>
+            <div id="targetMap" class="target-map" aria-label="Generated campsite map">
+              <div class="empty-state compact">
+                <i data-lucide="map"></i>
+                <p>Map pins will appear when generated targets include coordinates.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="workspace-section current-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Current availability</p>
+              <h2>Open right now</h2>
+            </div>
+          </div>
+          <div id="currentAvailability">
+            <div class="empty-state compact">
+              <i data-lucide="radar"></i>
+              <p>Current openings will appear after a target list is generated.</p>
             </div>
           </div>
         </section>
