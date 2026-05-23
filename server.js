@@ -229,21 +229,56 @@ function keywordList(prompt, keywords) {
   return keywords.filter((keyword) => lower.includes(keyword));
 }
 
+function canonicalLocation(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/\b(?:eastern sierra|mammoth|bishop|june lake|inyo)\b/i.test(text)) return "Eastern Sierra";
+  if (/\b(?:high sierra|sierra high country)\b/i.test(text)) return "High Sierra California";
+  if (/\byosemite\b/i.test(text)) return "Yosemite";
+  if (/\b(?:sequoia|kings canyon)\b/i.test(text)) return "Sequoia Kings Canyon";
+  if (/\b(?:tahoe|desolation)\b/i.test(text)) return "Lake Tahoe";
+  if (/\bsierra\b/i.test(text)) return "Sierra Nevada California";
+  return text;
+}
+
+function cleanLocationCandidate(value) {
+  let candidate = String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s"'`]*(?:the\s+)?/i, "")
+    .trim();
+
+  const stopPatterns = [
+    /\s+(?:and|then)\s+(?:apply|add|create|make|set\s+up|start|turn\s+on|enable)\b/i,
+    /\s+(?:and|then)\s+(?:notify|message|text|email|send)\b/i,
+    /\s+(?:so|if|when)\s+(?:i|we|you|anyone|anything)\b/i
+  ];
+
+  for (const pattern of stopPatterns) {
+    const match = candidate.match(pattern);
+    if (match?.index !== undefined) candidate = candidate.slice(0, match.index).trim();
+  }
+
+  candidate = candidate
+    .replace(/\b(?:for me|please)\b.*$/i, "")
+    .replace(/\b(?:notifications?|alerts?|reminders?)\b.*$/i, "")
+    .replace(/[.;,:-]+$/g, "")
+    .trim();
+
+  return canonicalLocation(candidate);
+}
+
 function parseLocation(prompt, fallback = "") {
-  if (fallback) return fallback.trim();
+  if (fallback) return cleanLocationCandidate(fallback);
   const patterns = [
     /\b(?:near|around|in|by|within\s+\d+\s*(?:hours?|hrs?)\s+of)\s+([^,.]+?)(?:\s+(?:for|from|with|near|that|where)\b|[,.]|$)/i,
-    /\b(?:find|show|watch)\s+(?:me\s+)?(?:campsites?|campgrounds?)\s+(?:near|around|in)\s+([^,.]+?)(?:\s+(?:for|from|with|near|that|where)\b|[,.]|$)/i
+    /\b(?:find|show|watch|get|give)\s+(?:me\s+)?(?:campsites?|campgrounds?)\s+(?:near|around|in)\s+([^,.]+?)(?:\s+(?:for|from|with|near|that|where)\b|[,.]|$)/i
   ];
   for (const pattern of patterns) {
     const match = prompt.match(pattern);
-    if (match?.[1]) return match[1].trim();
+    if (match?.[1]) return cleanLocationCandidate(match[1]);
   }
-  if (/eastern sierra|mammoth|bishop|june lake|inyo/i.test(prompt)) return "Eastern Sierra";
-  if (/sierra/i.test(prompt)) return "Sierra Nevada California";
-  if (/yosemite/i.test(prompt)) return "Yosemite";
-  if (/sequoia|kings canyon/i.test(prompt)) return "Sequoia Kings Canyon";
-  if (/tahoe|desolation/i.test(prompt)) return "Lake Tahoe";
+  const canonical = canonicalLocation(prompt);
+  if (canonical !== prompt.trim()) return canonical;
   return "California";
 }
 
