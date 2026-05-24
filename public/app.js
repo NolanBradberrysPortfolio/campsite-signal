@@ -12,6 +12,7 @@ const state = {
   },
   previewRequestId: 0,
   lastGeneratedPrompt: "",
+  resultsMode: "open",
   alerts: [],
   hits: [],
   runs: []
@@ -163,6 +164,58 @@ function promptChangedSinceGeneration() {
   return Boolean(state.lastGeneratedPrompt && $("#promptInput")?.value.trim() !== state.lastGeneratedPrompt);
 }
 
+function facilityKey(value) {
+  return String(value ?? "");
+}
+
+function openMatches() {
+  return state.currentAvailability.matches || [];
+}
+
+function openMatchTotal() {
+  return state.currentAvailability.totalMatches || openMatches().length;
+}
+
+function openMatchesByFacility() {
+  const groups = new Map();
+  for (const match of openMatches()) {
+    const key = facilityKey(match.facilityId);
+    groups.set(key, [...(groups.get(key) || []), match]);
+  }
+  return groups;
+}
+
+function targetEntries(targets = state.targets) {
+  return targets.map((target) => ({
+    target,
+    index: state.targets.indexOf(target)
+  }));
+}
+
+function openTargetEntries() {
+  const openGroups = openMatchesByFacility();
+  return targetEntries().filter(({ target }) => openGroups.has(facilityKey(target.id)));
+}
+
+function watchlistTargetEntries() {
+  if (state.currentAvailability.status !== "done") return targetEntries();
+  const openGroups = openMatchesByFacility();
+  return targetEntries().filter(({ target }) => !openGroups.has(facilityKey(target.id)));
+}
+
+function resultTargetEntries() {
+  return state.resultsMode === "open" ? openTargetEntries() : watchlistTargetEntries();
+}
+
+function targetIndexForHit(hit) {
+  return state.targets.findIndex((target) => facilityKey(target.id) === facilityKey(hit.facilityId));
+}
+
+function targetForHit(hit) {
+  const index = targetIndexForHit(hit);
+  return index >= 0 ? state.targets[index] : null;
+}
+
 function renderParsedSummary() {
   if (!state.constraints) {
     $("#parsedSummary").innerHTML = `
@@ -208,12 +261,17 @@ function renderTargetingDetails() {
 
   const c = state.constraints;
   const states = targetStates();
+  const watchlistCount = watchlistTargetEntries().length;
+  const selectedReminderCount = document.querySelectorAll(".target-checkbox").length
+    ? selectedTargetCount()
+    : watchlistCount;
   const rows = [
     ["Result status", promptChangedSinceGeneration() ? "Previous result - regenerate to update" : "Current generated result"],
     ["Dates checked", formatDateRange(c)],
     ["Search areas", searchAreas(c).join(", ") || "Area not resolved"],
     ["States targeted", states.length ? states.join(", ") : "No target states yet"],
-    ["Targets", `${state.targets.length} generated, ${selectedTargetCount()} selected`],
+    ["Targets", `${state.targets.length} generated, ${watchlistCount} watchlist candidates`],
+    ["Reminder selection", state.resultsMode === "watchlist" ? `${selectedReminderCount} selected` : "Open now view"],
     ["Site classes", c.includeGroupSites ? "Standard and group-capable sites" : "Standard overnight sites only"]
   ];
 
@@ -239,17 +297,40 @@ function resetTargetMap() {
   }
 }
 
-function renderTargetMap() {
-  const node = $("#targetMap");
-  if (!node) return;
-  const mappableTargets = state.targets.filter((target) => Number.isFinite(target.latitude) && Number.isFinite(target.longitude));
+function renderResultsCounts() {
+  const openCount = state.currentAvailability.status === "checking" ? "checking" : String(openMatchTotal());
+  const watchlistCount = String(watchlistTargetEntries().length);
+  $("#openResultsCount").textContent = `(${openCount})`;
+  $("#watchlistResultsCount").textContent = `(${watchlistCount})`;
+}
 
-  if (!mappableTargets.length) {
+function renderResultsTabs() {
+  document.querySelectorAll("[data-results-mode]").forEach((tab) => {
+    const active = tab.dataset.resultsMode === state.resultsMode;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+
+function resultMapEmptyCopy() {
+  if (!state.targets.length) return "Map pins will appear when generated targets include coordinates.";
+  if (state.resultsMode === "open" && state.currentAvailability.status === "checking") return "Open-site pins will appear when the current availability check finishes.";
+  if (state.resultsMode === "open") return "No open-site pins for the current dates.";
+  return "No watchlist pins for this view.";
+}
+
+function renderResultsMap() {
+  const node = $("#resultsMap");
+  if (!node) return;
+  const openGroups = openMatchesByFacility();
+  const mappableEntries = resultTargetEntries().filter(({ target }) => Number.isFinite(target.latitude) && Number.isFinite(target.longitude));
+
+  if (!mappableEntries.length) {
     resetTargetMap();
     node.innerHTML = `
       <div class="empty-state compact">
         <i data-lucide="map"></i>
-        <p>Map pins will appear when generated targets include coordinates.</p>
+        <p>${escapeHtml(resultMapEmptyCopy())}</p>
       </div>`;
     iconRefresh();
     return;
@@ -280,22 +361,28 @@ function renderTargetMap() {
   targetMarkers.clear();
 
   const bounds = [];
-  mappableTargets.forEach((target) => {
-    const targetIndex = state.targets.indexOf(target);
+  mappableEntries.forEach(({ target, index }) => {
     const latLng = [target.latitude, target.longitude];
     bounds.push(latLng);
+    const openCount = openGroups.get(facilityKey(target.id))?.length || 0;
     const popupImage = target.imageUrl
       ? `<img class="map-popup-image" src="${escapeAttr(target.imageUrl)}" alt="${escapeAttr(target.name)}">`
       : "";
+    const statusLine = state.resultsMode === "open"
+      ? `${openCount} matching open site${openCount === 1 ? "" : "s"}`
+      : state.currentAvailability.status === "done"
+        ? "No matching full-trip openings right now"
+        : "Watchlist candidate";
     const popupHtml = `
       <div class="map-popup">
         ${popupImage}
         <strong>${escapeHtml(target.name)}</strong>
         <span>${escapeHtml(target.region || "Region unavailable")}</span>
+        <span>${escapeHtml(statusLine)}</span>
         <a href="${escapeAttr(target.bookingUrl)}" target="_blank" rel="noreferrer">Open Recreation.gov</a>
       </div>`;
     const marker = leaflet.marker(latLng, { title: target.name }).addTo(targetMapLayer).bindPopup(popupHtml);
-    targetMarkers.set(targetIndex, marker);
+    targetMarkers.set(index, marker);
   });
 
   if (bounds.length === 1) {
@@ -306,10 +393,14 @@ function renderTargetMap() {
   window.setTimeout(() => targetMap?.invalidateSize(), 0);
 }
 
-function renderCurrentAvailability() {
-  const node = $("#currentAvailability");
-  if (!node) return;
+function renderOpenResults() {
+  const node = $("#resultsList");
   const current = state.currentAvailability;
+  $("#resultsModeLabel").textContent = "Current availability";
+  $("#resultsModeTitle").textContent = "Open now";
+  $("#resultsModeDescription").textContent = "Sites that appear reservable for the resolved dates are shown here first.";
+  $("#watchlistActions").hidden = true;
+
   if (!state.targets.length) {
     node.innerHTML = `
       <div class="empty-state compact">
@@ -356,7 +447,7 @@ function renderCurrentAvailability() {
     return;
   }
 
-  if (!current.matches.length) {
+  if (!openMatches().length) {
     node.innerHTML = `
       <div class="availability-status">
         <i data-lucide="circle-check"></i>
@@ -370,44 +461,73 @@ function renderCurrentAvailability() {
     return;
   }
 
-  const visibleMatches = current.matches.slice(0, 12);
+  const visibleMatches = openMatches().slice(0, 100);
   node.innerHTML = `
     <div class="availability-status success">
       <i data-lucide="circle-dot"></i>
       <div>
-        <strong>${current.totalMatches || current.matches.length} matching site${(current.totalMatches || current.matches.length) === 1 ? "" : "s"} open right now</strong>
+        <strong>${openMatchTotal()} matching site${openMatchTotal() === 1 ? "" : "s"} open right now</strong>
         <p>${escapeHtml(formatDateRange())}. Availability can disappear before checkout.</p>
       </div>
     </div>
     <div class="availability-grid">
-      ${visibleMatches.map((hit) => `
+      ${visibleMatches.map((hit) => {
+        const targetIndex = targetIndexForHit(hit);
+        const target = targetForHit(hit);
+        return `
         <article class="availability-card">
           <h3>${escapeHtml(hit.campground)} - site ${escapeHtml(String(hit.site))}</h3>
           <p>${escapeHtml(hit.type || "Campsite")} | ${escapeHtml(hit.region || "Region unavailable")}</p>
+          ${hit.loop ? `<p>Loop ${escapeHtml(hit.loop)}</p>` : ""}
+          <div class="meta-row">
+            ${target?.state ? `<span class="meta">${escapeHtml(target.state)}</span>` : ""}
+            ${Number.isFinite(target?.latitude) && Number.isFinite(target?.longitude) ? `<button class="link-button" data-action="focus-map" data-index="${targetIndex}" type="button">Map</button>` : ""}
+          </div>
           <a class="link" href="${escapeAttr(hit.link)}" target="_blank" rel="noreferrer">Open Recreation.gov</a>
         </article>
-      `).join("")}
+      `; }).join("")}
     </div>
     ${(current.totalMatches || 0) > visibleMatches.length ? `<p class="availability-warning">Showing first ${visibleMatches.length} current openings.</p>` : ""}`;
   iconRefresh();
 }
 
-function renderTargets() {
-  const grid = $("#targetsGrid");
-  $("#createAlertButton").disabled = state.targets.length === 0;
+function renderWatchlistResults() {
+  const grid = $("#resultsList");
+  const entries = watchlistTargetEntries();
+  $("#resultsModeLabel").textContent = "Reminder candidates";
+  $("#resultsModeTitle").textContent = "Watchlist targets";
+  $("#resultsModeDescription").textContent = state.currentAvailability.status === "done"
+    ? "Campgrounds without a matching full-trip opening are listed here for cancellation reminders."
+    : "Generated campgrounds are listed here while current availability is checked.";
+  $("#watchlistActions").hidden = false;
+  $("#createAlertButton").disabled = entries.length === 0;
+
   if (!state.targets.length) {
     grid.innerHTML = `
       <div class="empty-state">
         <i data-lucide="trees"></i>
         <p>No target list yet.</p>
       </div>`;
-    renderTargetingDetails();
-    renderTargetMap();
     iconRefresh();
     return;
   }
 
-  grid.innerHTML = state.targets.map((target, index) => `
+  if (!entries.length) {
+    grid.innerHTML = `
+      <div class="availability-status success">
+        <i data-lucide="circle-dot"></i>
+        <div>
+          <strong>Every generated target has a current opening</strong>
+          <p>Use the Open now tab to review the currently reservable sites for ${escapeHtml(formatDateRange())}.</p>
+        </div>
+      </div>`;
+    iconRefresh();
+    return;
+  }
+
+  grid.innerHTML = `
+    <div class="targets-grid">
+      ${entries.map(({ target, index }) => `
     <article class="target-card">
       <div class="target-image">
         ${target.imageUrl ? `<img src="${escapeAttr(target.imageUrl)}" alt="${escapeAttr(target.name)}">` : ""}
@@ -423,14 +543,27 @@ function renderTargets() {
         <div class="meta-row">
           ${target.state ? `<span class="meta">${escapeHtml(target.state)}</span>` : ""}
           ${target.campsitesCount ? `<span class="meta">${target.campsitesCount} sites</span>` : ""}
+          ${state.currentAvailability.status === "done" ? `<span class="meta">No current match</span>` : `<span class="meta">Checking now</span>`}
           ${Number.isFinite(target.latitude) && Number.isFinite(target.longitude) ? `<button class="link-button" data-action="focus-map" data-index="${index}" type="button">Map</button>` : ""}
           <a class="link" href="${escapeAttr(target.bookingUrl)}" target="_blank" rel="noreferrer">Recreation.gov</a>
         </div>
       </div>
     </article>
-  `).join("");
+  `).join("")}
+    </div>`;
+  iconRefresh();
+}
+
+function renderResults() {
+  renderResultsCounts();
+  renderResultsTabs();
+  renderResultsMap();
+  if (state.resultsMode === "open") {
+    renderOpenResults();
+  } else {
+    renderWatchlistResults();
+  }
   renderTargetingDetails();
-  renderTargetMap();
 }
 
 function renderAlerts() {
@@ -508,9 +641,7 @@ function renderHits() {
 function renderAll() {
   renderProviderStatus();
   renderParsedSummary();
-  renderTargets();
-  renderTargetingDetails();
-  renderCurrentAvailability();
+  renderResults();
   renderAlerts();
   renderHits();
   iconRefresh();
@@ -575,14 +706,14 @@ async function parseOnly() {
   const data = await api("/api/parse", { method: "POST", body: builderPayload() });
   state.constraints = data.constraints;
   renderParsedSummary();
-  renderTargetingDetails();
+  renderResults();
   toast("Parsed request.");
 }
 
 async function checkCurrentAvailability(targets, constraints) {
   const requestId = ++state.previewRequestId;
   resetCurrentAvailability("checking");
-  renderCurrentAvailability();
+  renderResults();
   try {
     const data = await api("/api/availability/preview", {
       method: "POST",
@@ -601,7 +732,7 @@ async function checkCurrentAvailability(targets, constraints) {
       checkedAt: data.checkedAt || null,
       error: ""
     };
-    renderCurrentAvailability();
+    renderResults();
   } catch (error) {
     if (requestId !== state.previewRequestId) return;
     state.currentAvailability = {
@@ -612,7 +743,7 @@ async function checkCurrentAvailability(targets, constraints) {
       checkedAt: null,
       error: error.message
     };
-    renderCurrentAvailability();
+    renderResults();
   }
 }
 
@@ -623,10 +754,10 @@ async function discover() {
   state.previewRequestId += 1;
   state.constraints = null;
   state.targets = [];
+  state.resultsMode = "open";
   resetCurrentAvailability("idle");
   renderParsedSummary();
-  renderTargets();
-  renderCurrentAvailability();
+  renderResults();
   iconRefresh();
   try {
     const data = await api("/api/discover", { method: "POST", body: { ...builderPayload(), limit: 24 } });
@@ -635,8 +766,7 @@ async function discover() {
     state.lastGeneratedPrompt = builderPayload().prompt;
     resetCurrentAvailability(data.targets.length ? "checking" : "idle");
     renderParsedSummary();
-    renderTargets();
-    renderCurrentAvailability();
+    renderResults();
     toast(`Generated ${data.targets.length} targets.`);
     if (data.targets.length) {
       checkCurrentAvailability(data.targets, data.constraints);
@@ -725,7 +855,7 @@ function fillExample() {
 function focusMapTarget(index) {
   const marker = targetMarkers.get(Number(index));
   if (!marker || !targetMap) return;
-  document.querySelector("#targeting")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.querySelector("#results")?.scrollIntoView({ behavior: "smooth", block: "start" });
   window.setTimeout(() => {
     targetMap.setView(marker.getLatLng(), Math.max(targetMap.getZoom(), 10));
     marker.openPopup();
@@ -771,6 +901,10 @@ document.addEventListener("click", async (event) => {
       document.querySelectorAll(".target-checkbox").forEach((checkbox) => { checkbox.checked = true; });
       renderTargetingDetails();
     }
+    if (button.dataset.resultsMode) {
+      state.resultsMode = button.dataset.resultsMode;
+      renderResults();
+    }
     if (button.dataset.action === "focus-map") focusMapTarget(button.dataset.index);
     if (button.dataset.action === "check") await checkAlert(button.dataset.id);
     if (button.dataset.action === "toggle") await toggleAlert(button.dataset.id, button.dataset.status);
@@ -808,7 +942,7 @@ document.addEventListener("change", (event) => {
 $("#promptInput").addEventListener("input", () => {
   if (!state.constraints) return;
   renderParsedSummary();
-  renderTargetingDetails();
+  renderResults();
 });
 
 initialize().catch((error) => toast(error.message));
