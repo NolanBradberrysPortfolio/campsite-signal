@@ -117,58 +117,66 @@
           <div class="section-heading">
             <div>
               <p class="eyebrow">Resolved targeting</p>
-              <h2>Dates, states, and map</h2>
+              <h2>Dates and search scope</h2>
             </div>
           </div>
-          <div class="targeting-grid">
-            <div id="targetingDetails" class="targeting-details">
-              <div class="empty-state compact">
-                <i data-lucide="map-pin"></i>
-                <p>Target area, states, and dates will appear after generation.</p>
-              </div>
+          <div id="targetingDetails" class="targeting-details">
+            <div class="empty-state compact">
+              <i data-lucide="map-pin"></i>
+              <p>Target area, states, and dates will appear after generation.</p>
             </div>
-            <div id="targetMap" class="target-map" aria-label="Generated campsite map">
+          </div>
+        </section>
+
+        <section id="results" class="workspace-section results-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Availability results</p>
+              <h2>Open sites and reminders</h2>
+            </div>
+          </div>
+
+          <div class="results-tabs" role="tablist" aria-label="Campsite result views">
+            <button class="results-tab active" type="button" role="tab" aria-selected="true" data-results-mode="open">
+              <span>Open now</span>
+              <strong id="openResultsCount">(0)</strong>
+            </button>
+            <button class="results-tab" type="button" role="tab" aria-selected="false" data-results-mode="watchlist">
+              <span>Watchlist targets</span>
+              <strong id="watchlistResultsCount">(0)</strong>
+            </button>
+          </div>
+
+          <div class="results-layout">
+            <div id="resultsMap" class="target-map results-map" aria-label="Campsite results map">
               <div class="empty-state compact">
                 <i data-lucide="map"></i>
                 <p>Map pins will appear when generated targets include coordinates.</p>
               </div>
             </div>
-          </div>
-        </section>
 
-        <section class="workspace-section current-section">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Current availability</p>
-              <h2>Open right now</h2>
-            </div>
-          </div>
-          <div id="currentAvailability">
-            <div class="empty-state compact">
-              <i data-lucide="radar"></i>
-              <p>Current openings will appear after a target list is generated.</p>
-            </div>
-          </div>
-        </section>
+            <div class="results-panel">
+              <div class="results-panel-heading">
+                <div>
+                  <p id="resultsModeLabel" class="eyebrow">Current availability</p>
+                  <h3 id="resultsModeTitle">Open now</h3>
+                  <p id="resultsModeDescription" class="results-description">Current openings will appear after generation.</p>
+                </div>
+                <div id="watchlistActions" class="target-actions">
+                  <button id="selectAllTargets" class="secondary-button small" type="button">Select all</button>
+                  <button id="createAlertButton" class="primary-button small" type="button" disabled>
+                    <i data-lucide="bell-plus"></i>
+                    Create alert
+                  </button>
+                </div>
+              </div>
 
-        <section class="workspace-section targets-section">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Review before monitoring</p>
-              <h2>Generated targets</h2>
-            </div>
-            <div class="target-actions">
-              <button id="selectAllTargets" class="secondary-button small" type="button">Select all</button>
-              <button id="createAlertButton" class="primary-button small" type="button" disabled>
-                <i data-lucide="bell-plus"></i>
-                Create alert
-              </button>
-            </div>
-          </div>
-          <div id="targetsGrid" class="targets-grid">
-            <div class="empty-state">
-              <i data-lucide="trees"></i>
-              <p>No target list yet.</p>
+              <div id="resultsList" class="results-list">
+                <div class="empty-state">
+                  <i data-lucide="trees"></i>
+                  <p>No results yet.</p>
+                </div>
+              </div>
             </div>
           </div>
         </section>
