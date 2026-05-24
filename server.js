@@ -291,6 +291,22 @@ function canonicalLocation(value) {
   return text;
 }
 
+function uniqueList(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function canonicalLocationsFromText(value) {
+  const text = String(value || "");
+  const locations = [];
+  if (/\b(?:eastern sierra|mammoth|bishop|june lake|inyo)\b/i.test(text)) locations.push("Eastern Sierra");
+  if (/\b(?:high sierra|sierra high country)\b/i.test(text)) locations.push("High Sierra California");
+  if (/\byosemite\b/i.test(text)) locations.push("Yosemite");
+  if (/\b(?:sequoia|kings canyon)\b/i.test(text)) locations.push("Sequoia Kings Canyon");
+  if (/\b(?:tahoe|desolation)\b/i.test(text)) locations.push("Lake Tahoe");
+  if (!locations.length && /\bsierra\b/i.test(text)) locations.push("Sierra Nevada California");
+  return uniqueList(locations);
+}
+
 function cleanLocationCandidate(value) {
   let candidate = String(value || "")
     .replace(/\s+/g, " ")
@@ -315,6 +331,23 @@ function cleanLocationCandidate(value) {
     .trim();
 
   return canonicalLocation(candidate);
+}
+
+function parseLocations(prompt, fallback = "") {
+  if (Array.isArray(fallback)) {
+    const locations = fallback.flatMap((item) => canonicalLocationsFromText(item).length ? canonicalLocationsFromText(item) : [cleanLocationCandidate(item)]);
+    return uniqueList(locations);
+  }
+
+  const explicit = String(fallback || "").trim();
+  if (explicit) {
+    const explicitLocations = canonicalLocationsFromText(explicit);
+    return explicitLocations.length ? explicitLocations : [cleanLocationCandidate(explicit)];
+  }
+
+  const promptLocations = canonicalLocationsFromText(prompt);
+  if (promptLocations.length) return promptLocations;
+  return [parseLocation(prompt)];
 }
 
 function parseLocation(prompt, fallback = "") {
@@ -378,17 +411,19 @@ function parseConstraints(input = {}) {
   if (/telegram/i.test(prompt)) channels.push("telegram");
   if (/\b(text|sms|phone)\b/i.test(prompt)) channels.push("sms");
   if (/\bemail\b/i.test(prompt)) channels.push("email");
+  const locations = parseLocations(prompt, explicit.locations || explicit.location || input.locations || input.location);
 
   return {
     arrivalDate: normalizeDate(explicit.arrivalDate || input.arrivalDate || dates?.arrivalDate),
     checkoutDate: normalizeDate(explicit.checkoutDate || input.checkoutDate || dates?.checkoutDate),
-    location: parseLocation(prompt, explicit.location || input.location),
+    location: locations[0] || "California",
+    locations,
     maxDriveHours: explicit.maxDriveHours ?? parseDriveHours(prompt),
     mustHave: [...new Set([...(explicit.mustHave || []), ...features])],
     equipment: explicit.equipment?.length ? explicit.equipment : (equipment.length ? equipment : ["tent"]),
     includeGroupSites: parseIncludeGroupSites(prompt, explicit.includeGroupSites),
     channels: [...new Set([...(explicit.channels || []), ...(channels.length ? channels : ["telegram"])])],
-    searchQuery: explicit.searchQuery || input.searchQuery || parseLocation(prompt, explicit.location || input.location),
+    searchQuery: explicit.searchQuery || input.searchQuery || locations.join(" "),
     dateLabel: explicit.dateLabel || input.dateLabel || dates?.dateLabel || "",
     rawPrompt: prompt
   };
@@ -397,6 +432,7 @@ function parseConstraints(input = {}) {
 function targetScore(result, constraints) {
   const text = `${result.name || ""} ${result.description || ""} ${(result.activities || []).map((a) => a.activity_name).join(" ")}`.toLowerCase();
   const placeText = `${result.name || ""} ${result.parent_name || ""} ${result.city || ""} ${result.state_code || ""}`.toLowerCase();
+  const locationText = (constraints.locations?.length ? constraints.locations.join(" ") : constraints.location || "").toLowerCase();
   let score = 0;
   const reasons = [];
   const signals = [
@@ -416,7 +452,7 @@ function targetScore(result, constraints) {
     const normalized = must.toLowerCase().replace(/s$/, "");
     if (normalized && text.includes(normalized)) score += 3;
   }
-  for (const term of String(constraints.location || "").toLowerCase().split(/\s+/).filter((item) => item.length > 3)) {
+  for (const term of locationText.split(/\s+/).filter((item) => item.length > 3)) {
     if (placeText.includes(term)) score += 2;
   }
   if (result.reservable) score += 4;
@@ -431,12 +467,20 @@ function resultLooksUnavailable(result) {
 
 function resultIsExcludedSiteClass(result, constraints) {
   if (constraints.includeGroupSites) return false;
+  const name = String(result.name || "").toLowerCase();
   const text = `${result.name || ""} ${result.description || ""}`.toLowerCase();
+  if (/\b(group|horse|equestrian|cabin|lookout)\b/.test(name)) return true;
   return /\b(group camp|group campground|group site|horse camp|horse campsites|equestrian|guard station cabin|lookout cabin)\b/.test(text);
 }
 
 function resultMatchesLocation(result, constraints) {
-  const location = String(constraints.location || "").toLowerCase();
+  const locations = constraints.locations?.length ? constraints.locations : [constraints.location || ""];
+  return locations.some((location) => resultMatchesSingleLocation(result, location));
+}
+
+function resultMatchesSingleLocation(result, locationValue) {
+  const location = String(locationValue || "").toLowerCase();
+  if (!location) return true;
   const text = [
     result.name,
     result.parent_name,
@@ -503,11 +547,12 @@ async function discoverTargets(input) {
     constraints.dateLabel ||= `${fallback.dateLabel} default`;
   }
 
-  const seedQueries = [
-    constraints.searchQuery,
-    `${constraints.searchQuery} campground`,
-    `${constraints.searchQuery} lake trail campground`
-  ].filter(Boolean);
+  const searchAreas = constraints.locations?.length ? constraints.locations : [constraints.searchQuery || constraints.location].filter(Boolean);
+  const seedQueries = uniqueList(searchAreas.flatMap((area) => [
+    area,
+    `${area} campground`,
+    `${area} lake trail campground`
+  ]));
 
   const seen = new Set();
   const targets = [];

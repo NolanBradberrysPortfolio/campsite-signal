@@ -154,6 +154,11 @@ function selectedTargetCount() {
   return boxes.filter((checkbox) => checkbox.checked).length;
 }
 
+function searchAreas(constraints = state.constraints) {
+  const values = constraints?.locations?.length ? constraints.locations : [constraints?.location];
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
 function promptChangedSinceGeneration() {
   return Boolean(state.lastGeneratedPrompt && $("#promptInput")?.value.trim() !== state.lastGeneratedPrompt);
 }
@@ -174,7 +179,7 @@ function renderParsedSummary() {
     stale ? "Previous generated result" : "",
     c.dateLabel || "Resolved dates",
     formatDateRange(c),
-    `Area: ${c.location}`,
+    `Areas: ${searchAreas(c).join(", ") || "Area not resolved"}`,
     targetStates().length ? `States: ${targetStates().join(", ")}` : "",
     ...(c.mustHave || []).slice(0, 7),
     ...(c.equipment || [])
@@ -206,7 +211,7 @@ function renderTargetingDetails() {
   const rows = [
     ["Result status", promptChangedSinceGeneration() ? "Previous result - regenerate to update" : "Current generated result"],
     ["Dates checked", formatDateRange(c)],
-    ["Search area", c.location || "Area not resolved"],
+    ["Search areas", searchAreas(c).join(", ") || "Area not resolved"],
     ["States targeted", states.length ? states.join(", ") : "No target states yet"],
     ["Targets", `${state.targets.length} generated, ${selectedTargetCount()} selected`],
     ["Site classes", c.includeGroupSites ? "Standard and group-capable sites" : "Standard overnight sites only"]
@@ -446,7 +451,7 @@ function renderAlerts() {
       <div class="alert-topline">
         <div>
           <h3>${escapeHtml(alert.name)}</h3>
-          <p>${escapeHtml(alert.constraints.location)} | ${alert.constraints.arrivalDate} to ${alert.constraints.checkoutDate}</p>
+          <p>${escapeHtml(searchAreas(alert.constraints).join(", ") || alert.constraints.location)} | ${alert.constraints.arrivalDate} to ${alert.constraints.checkoutDate}</p>
         </div>
         <span class="status-pill ${alert.status === "active" ? "enabled" : ""}">${alert.status}</span>
       </div>
@@ -656,7 +661,7 @@ async function createAlert() {
     ...builderPayload(),
     targets: selected,
     channels: channelInputs(),
-    name: [state.constraints?.location, state.constraints?.arrivalDate].filter(Boolean).join(" ") || "EasyCamp alert"
+    name: [searchAreas(state.constraints).join(", ") || state.constraints?.location, state.constraints?.arrivalDate].filter(Boolean).join(" ") || "EasyCamp alert"
   };
   const data = await api("/api/alerts", { method: "POST", body: payload });
   state.alerts.unshift(data.alert);
